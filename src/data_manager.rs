@@ -1,4 +1,3 @@
-use crate::rocksdb_storage_engine::StorageEngineImpl;
 use crate::{
     ChunkId, DataChunk, DataChunkRef, StorageEngine,
 };
@@ -215,7 +214,7 @@ impl<T: StorageEngine> DataManagerImpl<T> {
                 false
             } else {
                 true
-            }
+            }    
         };
 
         if !exists {

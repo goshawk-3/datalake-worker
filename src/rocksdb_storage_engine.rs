@@ -8,6 +8,7 @@ use rocksdb_lib::{
     OptimisticTransactionOptions, Transaction,
     WriteOptions,
 };
+use serde_binary::binary_stream::Endian;
 
 const SIZE_KEY: [u8; 1] = [1u8; 1];
 
@@ -135,7 +136,10 @@ impl StorageEngine for StorageEngineImpl {
 
             // Persist KEY - VALUE
             // Chunk_ID -> SizeU32 + Chunk Bytes
-            let chunk_bytes = [0u8; 200_000]; //TODO:
+            
+            let chunk_bytes = serde_binary::encode(chunk, Endian::Big)
+            .expect("should encode");
+
             txn.put(chunk.id, chunk_bytes)?;
 
             Ok(())

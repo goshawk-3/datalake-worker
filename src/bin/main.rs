@@ -2,6 +2,7 @@ use datalake::{
     data_manager::DataManagerImpl,
     rocksdb_storage_engine::StorageEngineImpl,
     StorageEngine,
+    DataChunkRef
 };
 
 enum Commands {

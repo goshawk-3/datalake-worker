@@ -4,6 +4,7 @@ pub mod rocksdb_storage_engine;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use serde_binary::Encode;
 use thiserror::Error;
 
 pub type DatasetId = [u8; 32];
@@ -23,6 +24,13 @@ pub struct DataChunk {
     /// A mapping between file names and HTTP URLs to
     /// download files from
     files: HashMap<String, String>,
+}
+
+impl Encode for DataChunk {
+    fn encode(&self, _serializer: &mut serde_binary::Serializer<'_>) -> Result<(), serde_binary::Error> {
+        // TODO: Implement
+        Ok(())
+    }
 }
 
 // Data chunk must remain available and untouched till this reference is not dropped
