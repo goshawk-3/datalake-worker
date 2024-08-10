@@ -14,17 +14,17 @@ use tokio::task::JoinHandle;
 
 type Cache = Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
 
-pub struct DataChunkRefImpl {
+pub struct DataChunkRefImpl<T: StorageEngine> {
     _permit: OwnedSemaphorePermit,
     chunk_id: ChunkId,
-    db: Arc<RwLock<StorageEngineImpl>>,
+    db: Arc<RwLock<T>>,
 }
 
-impl DataChunkRefImpl {
+impl<T: StorageEngine> DataChunkRefImpl<T> {
     pub fn new(
         permit: OwnedSemaphorePermit,
         chunk_id: ChunkId,
-        db: Arc<RwLock<StorageEngineImpl>>,
+        db: Arc<RwLock<T>>,
     ) -> Self {
         Self {
             _permit: permit,
@@ -34,8 +34,9 @@ impl DataChunkRefImpl {
     }
 }
 
-#[async_trait::async_trait]
-impl DataChunkRef for DataChunkRefImpl {
+impl<T: StorageEngine> DataChunkRef
+    for DataChunkRefImpl<T>
+{
     fn path(&self) -> PathBuf {
         self.db
             .try_read()
@@ -45,17 +46,17 @@ impl DataChunkRef for DataChunkRefImpl {
     }
 }
 
-pub struct DataManagerImpl {
+pub struct DataManagerImpl<T: StorageEngine> {
     /// Cache holds a list of ids of all persisted chunks
     ///
     /// It also maps a lock permit to chunk_id
     cache: Cache,
 
     /// DB represents the persistence layer
-    db: Arc<RwLock<StorageEngineImpl>>,
+    db: Arc<RwLock<T>>,
 }
 
-impl DataManagerImpl {
+impl<T: StorageEngine> DataManagerImpl<T> {
     /// Spawns a task to download and persist chunks
     pub fn spawn_download_chunk(
         &self,
@@ -148,19 +149,8 @@ impl DataManagerImpl {
     }
 }
 
-impl Default for DataManagerImpl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DataManagerImpl {
-    pub fn new() -> Self {
-        // TODO: Read conf from TOML file
-        let storage = StorageEngineImpl::from_conf(
-            Default::default(),
-        );
-
+impl<T: StorageEngine> DataManagerImpl<T> {
+    pub fn new(storage: T) -> Self {
         // Reload the Cache from the persisted data
         let mut cache = HashMap::new();
         storage
@@ -182,7 +172,7 @@ impl DataManagerImpl {
 
     /// Implements s3 downloader
     async fn download_chunk(
-        db: Arc<RwLock<StorageEngineImpl>>,
+        db: Arc<RwLock<T>>,
         cache: Cache,
         s3_bucket: String,
         s3_key: String,
@@ -218,13 +208,16 @@ impl DataManagerImpl {
         let exists = {
             let mut cache = cache.write().await;
             if !cache.contains_key(&chunk.id) {
-                cache.insert(chunk.id, Arc::new(Semaphore::new(1)));
+                cache.insert(
+                    chunk.id,
+                    Arc::new(Semaphore::new(1)),
+                );
                 false
             } else {
                 true
-            }     
+            }
         };
-        
+
         if !exists {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
             // Any write conflict will be resolved by the RocksDB::commit itself

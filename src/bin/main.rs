@@ -1,5 +1,7 @@
 use datalake::{
-    data_manager::DataManagerImpl, DataChunkRef,
+    data_manager::DataManagerImpl,
+    rocksdb_storage_engine::StorageEngineImpl,
+    StorageEngine,
 };
 
 enum Commands {
@@ -30,7 +32,13 @@ fn prompt() -> requestty::Result<Commands> {
 
 #[tokio::main]
 async fn main() {
-    let data_manager = DataManagerImpl::new();
+     // TODO: Read conf from TOML file
+
+    // Initialize the data manager
+    let storage =
+        StorageEngineImpl::from_conf(Default::default());
+
+    let data_manager: DataManagerImpl<StorageEngineImpl> = DataManagerImpl::new(storage);
 
     // Assigned subset of data chunks in S3
     let vec_buckets_and_keys = [

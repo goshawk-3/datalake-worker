@@ -1,5 +1,5 @@
 pub mod data_manager;
-mod rocksdb_storage_engine;
+pub mod rocksdb_storage_engine;
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -24,7 +24,6 @@ pub struct DataChunk {
     /// download files from
     files: HashMap<String, String>,
 }
-
 
 // Data chunk must remain available and untouched till this reference is not dropped
 pub trait DataChunkRef: Send + Sync {
@@ -68,7 +67,7 @@ impl Default for StorageConf {
 /// Implement StorageEngine to achieve backend-agnostic storage engine
 /// Defines a set of functionalities any supported storage
 /// engine must implement
-pub trait StorageEngine {
+pub trait StorageEngine: Send + Sync + 'static {
     fn from_conf(conf: StorageConf) -> Self;
 
     fn find_chunk_id(
