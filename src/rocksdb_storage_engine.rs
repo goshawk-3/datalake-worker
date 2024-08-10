@@ -100,7 +100,7 @@ impl StorageEngine for StorageEngineImpl {
 
     fn persist_chunk(
         &self,
-        chunk: &DataChunk,
+        chunk: DataChunk,
         size: u32,
     ) -> Result<(), Error> {
         self.try_commit_txn(|txn| {
@@ -136,11 +136,14 @@ impl StorageEngine for StorageEngineImpl {
 
             // Persist KEY - VALUE
             // Chunk_ID -> SizeU32 + Chunk Bytes
-            
-            let chunk_bytes = serde_binary::encode(chunk, Endian::Big)
+            let id = chunk.id;
+            let chunk_bytes = serde_binary::encode(&chunk, Endian::Big)
             .expect("should encode");
 
-            txn.put(chunk.id, chunk_bytes)?;
+            // Chunk is now in form of chunk_bytes, drop the chunk struct to free memory
+            drop(chunk);
+
+            txn.put(id, chunk_bytes)?;
 
             Ok(())
         })
@@ -158,7 +161,7 @@ impl StorageEngineImpl {
         func: T,
     ) -> Result<R, Error>
     where
-        T: Fn(
+        T: FnOnce(
             &Transaction<'_, OptimisticTransactionDB>,
         ) -> Result<R, Error>,
     {

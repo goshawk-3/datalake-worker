@@ -199,9 +199,11 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             .await
             .expect("valid data blob");
 
+           
         let chunk: DataChunk =
             serde_binary::from_vec(vec, Endian::Big)
                 .expect("valid chunk");
+        let id = chunk.id;
 
         // Check if the chunk already exists in the cache
         let exists = {
@@ -223,11 +225,11 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             if db
                 .read()
                 .await
-                .persist_chunk(&chunk, chunk_size)
+                .persist_chunk(chunk, chunk_size)
                 .is_err()
             {
                 // chunk could not be persisted. Rollback the cache
-                cache.write().await.remove(&chunk.id);
+                cache.write().await.remove(&id);
             }
         }
     }

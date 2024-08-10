@@ -94,7 +94,7 @@ pub trait StorageEngine: Send + Sync + 'static {
 
     fn persist_chunk(
         &self,
-        chunk: &DataChunk,
+        chunk: DataChunk,
         size: u32,
     ) -> Result<(), Error>;
 
