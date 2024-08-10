@@ -215,9 +215,16 @@ impl DataManagerImpl {
                 .expect("valid chunk");
 
         // Check if the chunk already exists in the cache
-        let exists =
-            cache.read().await.contains_key(&chunk.id);
-
+        let exists = {
+            let mut cache = cache.write().await;
+            if !cache.contains_key(&chunk.id) {
+                cache.insert(chunk.id, Arc::new(Semaphore::new(1)));
+                false
+            } else {
+                true
+            }     
+        };
+        
         if !exists {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
             // Any write conflict will be resolved by the RocksDB::commit itself
@@ -225,13 +232,10 @@ impl DataManagerImpl {
                 .read()
                 .await
                 .persist_chunk(&chunk, chunk_size)
-                .is_ok()
+                .is_err()
             {
-                // chunk persisted, add it to the cache
-                cache.write().await.insert(
-                    chunk.id,
-                    Arc::new(Semaphore::new(1)),
-                );
+                // chunk could not be persisted. Rollback the cache
+                cache.write().await.remove(&chunk.id);
             }
         }
     }
