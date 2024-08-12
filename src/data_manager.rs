@@ -220,14 +220,19 @@ impl<T: StorageEngine> DataManagerImpl<T> {
         if !exists {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
             // Any write conflict will be detected by the RocksDB::commit itself.
-            // However, we don't expect high lock contention here.
-            if db
+            // However, we don't expect any lock-per-key contention here so commit errors due to
+            // conflicts are not expected.
+            if let Err(err) = db
                 .read()
                 .await
                 .persist_chunk(chunk, chunk_size)
-                .is_err()
             {
+                println!(
+                    "Failed to persist chunk: {:?}",
+                    err
+                );
                 // chunk could not be persisted.
+                // It could be due to IO error or reaching the max-size limit
                 // Rollback it from the cache to keep the cache consistent
                 cache.write().await.remove(&id);
             }
