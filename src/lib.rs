@@ -1,10 +1,10 @@
 pub mod data_manager;
 pub mod rocksdb_storage_engine;
 
+use serde_binary::Encode;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use serde_binary::Encode;
 use thiserror::Error;
 
 pub type DatasetId = [u8; 32];
@@ -27,7 +27,10 @@ pub struct DataChunk {
 }
 
 impl Encode for DataChunk {
-    fn encode(&self, _serializer: &mut serde_binary::Serializer<'_>) -> Result<(), serde_binary::Error> {
+    fn encode(
+        &self,
+        _serializer: &mut serde_binary::Serializer<'_>,
+    ) -> Result<(), serde_binary::Error> {
         // TODO: Implement
         Ok(())
     }
@@ -47,7 +50,6 @@ pub enum Error {
     MaxSizeAllocated(u32),
 }
 
-// Implement From To rocksdb_lib::Error for Error
 impl From<rocksdb_lib::Error> for Error {
     fn from(e: rocksdb_lib::Error) -> Self {
         Self::InternalErr(e)

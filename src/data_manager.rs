@@ -3,7 +3,7 @@ use crate::{
 };
 use aws_config::BehaviorVersion;
 use serde_binary::binary_stream::Endian;
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{
@@ -199,7 +199,6 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             .await
             .expect("valid data blob");
 
-           
         let chunk: DataChunk =
             serde_binary::from_vec(vec, Endian::Big)
                 .expect("valid chunk");
@@ -208,27 +207,28 @@ impl<T: StorageEngine> DataManagerImpl<T> {
         // Check if the chunk already exists in the cache
         let exists = {
             let mut cache = cache.write().await;
-            if !cache.contains_key(&chunk.id) {
-                cache.insert(
-                    chunk.id,
-                    Arc::new(Semaphore::new(1)),
-                );
+            if let hash_map::Entry::Vacant(e) =
+                cache.entry(chunk.id)
+            {
+                e.insert(Arc::new(Semaphore::new(1)));
                 false
             } else {
                 true
-            }    
+            }
         };
 
         if !exists {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
-            // Any write conflict will be resolved by the RocksDB::commit itself
+            // Any write conflict will be detected by the RocksDB::commit itself.
+            // However, we don't expect high lock contention here.
             if db
                 .read()
                 .await
                 .persist_chunk(chunk, chunk_size)
                 .is_err()
             {
-                // chunk could not be persisted. Rollback the cache
+                // chunk could not be persisted.
+                // Rollback it from the cache to keep the cache consistent
                 cache.write().await.remove(&id);
             }
         }

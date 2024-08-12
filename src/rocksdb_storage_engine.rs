@@ -12,34 +12,12 @@ use serde_binary::binary_stream::Endian;
 
 const SIZE_KEY: [u8; 1] = [1u8; 1];
 
+/// Represents a storage engine implementation using RocksDB.
 pub struct StorageEngineImpl {
     rocksdb: OptimisticTransactionDB,
     conf: StorageConf,
 }
 
-/// Implementation of storage engine for a data lake.
-///
-/// This storage engine provides methods for managing data chunks in a data lake.
-/// It uses an underlying RocksDB database for storing and retrieving data.
-///
-/// # Examples
-///
-/// ```
-/// use datalake::StorageEngine;
-///
-/// // Create a new storage engine
-/// let conf = StorageEngine::new("/path/to/database");
-/// let storage_engine = StorageEngine::from_conf(conf);
-///
-/// // Persist a data chunk
-/// let chunk = DataChunk::new(...);
-/// storage_engine.persist_chunk(&chunk, 100).unwrap();
-///
-/// // Find a chunk ID
-/// let dataset_id = DatasetId::new(...);
-/// let block_number = 42;
-/// let chunk_id = storage_engine.find_chunk_id(dataset_id, block_number).unwrap();
-/// ```
 impl StorageEngine for StorageEngineImpl {
     fn from_conf(conf: StorageConf) -> Self {
         let rocksdb =
@@ -137,8 +115,9 @@ impl StorageEngine for StorageEngineImpl {
             // Persist KEY - VALUE
             // Chunk_ID -> SizeU32 + Chunk Bytes
             let id = chunk.id;
-            let chunk_bytes = serde_binary::encode(&chunk, Endian::Big)
-            .expect("should encode");
+            let chunk_bytes =
+                serde_binary::encode(&chunk, Endian::Big)
+                    .expect("should encode");
 
             // Chunk is now in form of chunk_bytes, drop the chunk struct to free memory
             drop(chunk);
