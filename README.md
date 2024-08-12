@@ -9,8 +9,9 @@ Data lake implementation integrated with AWS S3
 - Find and lock a chunk - Once locked, chunk cannot be deleted
 - Scheduled deletion - Scheduled for deletion, a chunk will be removed once it is no longer in use.
 
+- Maximum allocated on-disk storage limit
 - Backend-agnostic datamanager. The RocksDB backend can be substituted with any in-process NoSQL or SQL storage engine.g
-
+- Simple Prompt UI
 
 # Design 
 

@@ -1,8 +1,7 @@
 use datalake::{
     data_manager::DataManagerImpl,
     rocksdb_storage_engine::StorageEngineImpl,
-    StorageEngine,
-    DataChunkRef
+    DataChunkRef, StorageEngine,
 };
 
 enum Commands {
@@ -33,30 +32,33 @@ fn prompt() -> requestty::Result<Commands> {
 
 #[tokio::main]
 async fn main() {
-     // TODO: Read conf from TOML file
+    // TODO: Read conf from TOML file
 
     // Initialize the data manager
     let storage =
         StorageEngineImpl::from_conf(Default::default());
 
-    let data_manager: DataManagerImpl<StorageEngineImpl> = DataManagerImpl::new(storage);
+    let data_manager: DataManagerImpl<StorageEngineImpl> =
+        DataManagerImpl::new(storage);
 
     // Assigned subset of data chunks in S3
     let vec_buckets_and_keys = [
         ("bucket1".to_string(), "key1".to_string()),
         ("bucket2".to_string(), "key2".to_string()),
         ("bucket3".to_string(), "key3".to_string()),
+        ("bucket4".to_string(), "key4".to_string()),
     ];
 
     // Spawn tasks to concurrently download and persist chunks
-    vec_buckets_and_keys.iter().for_each(
-        |(bucket, key)| {
+    let mut tasks = vec_buckets_and_keys
+        .iter()
+        .map(|(bucket, key)| {
             data_manager.spawn_download_chunk(
                 bucket.clone(),
                 key.clone(),
-            );
-        },
-    );
+            )
+        })
+        .collect::<Vec<_>>();
 
     // Serve queries for the downloaded data chunks
     loop {
@@ -95,16 +97,25 @@ async fn main() {
             }
             Commands::ScheduledDelete => {
                 // TODO: Read input from user
+
                 // schedule a chunk for deletion
                 let chunk_id = [0u8; 32];
-                data_manager
+
+                if let Some(handle) = data_manager
                     .spawn_delete_chunk(chunk_id)
-                    .await;
+                    .await
+                {
+                    tasks.push(handle);
+                }
             }
             Commands::Exit => {
-                // Implement a graceful shutdown
-                todo!()
+                break;
             }
         }
+    }
+
+    // Wait until all spawned tasks complete
+    for task in tasks {
+        task.await.unwrap();
     }
 }
