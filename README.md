@@ -6,7 +6,7 @@ Data lake implementation integrated with AWS S3
 - Async-Download chunks from AWS S3
 - Persist on-disk in a lock-less manner
 - List all persisted chunks by ID from a cache
-- Find and lock a chunk - Once locked, chunk cannot be deleted until the DataChunkRef is released/dropped.
+- Find and lock a chunk - Once locked, chunk cannot be deleted until all DataChunkRef are dropped.
 - Scheduled deletion - Scheduled for deletion, a chunk will be removed once it is no longer in use.
 
 - Maximum allocated on-disk storage limit
