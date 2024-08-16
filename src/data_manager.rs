@@ -1,6 +1,7 @@
 use crate::{
     ChunkId, DataChunk, DataChunkRef, StorageEngine,
 };
+use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use serde_binary::binary_stream::Endian;
 use std::collections::{hash_map, HashMap};
@@ -36,13 +37,14 @@ impl<T: StorageEngine> DataChunkRefImpl<T> {
     }
 }
 
+#[async_trait]
 impl<T: StorageEngine> DataChunkRef
     for DataChunkRefImpl<T>
 {
-    fn path(&self) -> PathBuf {
+    async fn path(&self) -> PathBuf {
         self.db
-            .try_read()
-            .unwrap()
+            .read()
+            .await
             .chunk_path(&self.chunk_id)
             .to_path_buf()
     }

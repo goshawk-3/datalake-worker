@@ -1,6 +1,7 @@
 pub mod data_manager;
 pub mod rocksdb_storage_engine;
 
+use async_trait::async_trait;
 use serde_binary::Encode;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -37,9 +38,10 @@ impl Encode for DataChunk {
 }
 
 // Data chunk must remain available and untouched till this reference is not dropped
+#[async_trait]
 pub trait DataChunkRef: Send + Sync {
     // Data chunk directory
-    fn path(&self) -> PathBuf;
+    async fn path(&self) -> PathBuf;
 }
 
 #[derive(Debug, Error)]
