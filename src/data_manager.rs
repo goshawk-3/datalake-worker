@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 
 /// Maximum number of concurrent readers allowed for a chunk
 const MAX_CONCURRENT_READERS: usize = 10;
+const MAX_SIZE_ON_DISK: u64 = 1_000_000_000_000; // 1TB
 
 type Cache = Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
 
@@ -205,12 +206,12 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             .into_async_read();
 
         let mut vec = Vec::new();
-        let chunk_size = vec.len() as u32;
 
         tokio::io::copy(&mut stream, &mut vec)
             .await
             .expect("valid data blob");
 
+        let chunk_size = vec.len();
         let chunk: DataChunk =
             serde_binary::from_vec(vec, Endian::Big)
                 .expect("valid chunk");
@@ -222,6 +223,18 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             if let hash_map::Entry::Vacant(e) =
                 cache.entry(chunk.id)
             {
+                // A fast (a bit inaccurate) way to check if the storage limit is reached
+                if db
+                    .read()
+                    .await
+                    .get_total_allocated_size()
+                    + chunk_size as u64
+                    > MAX_SIZE_ON_DISK
+                {
+                    println!("Storage limit reached");
+                    return;
+                }
+
                 e.insert(Arc::new(Semaphore::new(
                     MAX_CONCURRENT_READERS,
                 )));
@@ -236,17 +249,15 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             // Any write conflict will be detected by the RocksDB::commit itself.
             // However, we don't expect any lock-per-key contention here so commit errors due to
             // conflicts are not expected.
-            if let Err(err) = db
-                .read()
-                .await
-                .persist_chunk(chunk, chunk_size)
+            if let Err(err) =
+                db.read().await.persist_chunk(chunk)
             {
                 println!(
                     "Failed to persist chunk: {:?}",
                     err
                 );
                 // chunk could not be persisted.
-                // It could be due to IO error or reaching the max-size limit
+                // It could be due to IO error.
                 // Rollback it from the cache to keep the cache consistent
                 cache.write().await.remove(&id);
             }

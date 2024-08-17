@@ -10,7 +10,6 @@ use rocksdb_lib::{
 };
 use serde_binary::binary_stream::Endian;
 
-const SIZE_KEY: [u8; 1] = [1u8; 1];
 const CF_CHUNKS: &str = "cf_chunks";
 
 /// Represents a storage engine implementation using RocksDB.
@@ -28,6 +27,7 @@ impl StorageEngine for StorageEngineImpl {
                 conf.path.as_str(),
             )
             .unwrap();
+
         Self { rocksdb, conf }
     }
 
@@ -74,7 +74,12 @@ impl StorageEngine for StorageEngineImpl {
         chunk_id: &ChunkId,
     ) -> Result<(), Error> {
         self.try_commit_txn(|txn| {
-            txn.delete(chunk_id)?;
+            let chunks_cf =
+                self.rocksdb.cf_handle(CF_CHUNKS).expect(
+                    "CF_CHUNKS column family must exist",
+                );
+
+            txn.delete_cf(chunks_cf, chunk_id)?;
 
             // Delete any dataset_id+block_num keys that have values of chunk_id
             let iter = txn.iterator(IteratorMode::Start);
@@ -84,8 +89,6 @@ impl StorageEngine for StorageEngineImpl {
                 }
             }
 
-            // TODO: Decrement AllocatedSize value
-
             Ok(())
         })
     }
@@ -93,30 +96,8 @@ impl StorageEngine for StorageEngineImpl {
     fn persist_chunk(
         &self,
         chunk: DataChunk,
-        size: u32,
     ) -> Result<(), Error> {
         self.try_commit_txn(|txn| {
-            // Ensure upper limit for persisted chunks is not reached
-            let buf = txn
-                .get(SIZE_KEY)?
-                .expect("SIZE_KEY must always exist");
-
-            let buf = buf.try_into().unwrap();
-            let curr_size = u32::from_le_bytes(buf);
-            let size_after_this_update = curr_size + size;
-            if size_after_this_update
-                >= self.conf.max_size_allocated_on_disk
-            {
-                return Err(Error::MaxSizeAllocated(
-                    size_after_this_update,
-                ));
-            }
-
-            txn.put(
-                SIZE_KEY,
-                size_after_this_update.to_be_bytes(),
-            )?;
-
             // Persist Key (Database_ID, Block_num) to Chunk_ID
             for block_num in chunk.block_range.clone() {
                 let key =
@@ -124,10 +105,6 @@ impl StorageEngine for StorageEngineImpl {
                 txn.put(key, chunk.id)?;
             }
 
-            // TODO: Sizeu32
-
-            // Persist KEY - VALUE
-            // Chunk_ID -> SizeU32 + Chunk Bytes
             let id = chunk.id;
             let chunk_bytes =
                 serde_binary::encode(&chunk, Endian::Big)
@@ -136,6 +113,7 @@ impl StorageEngine for StorageEngineImpl {
             // Chunk is now in form of chunk_bytes, drop the chunk struct to free memory
             drop(chunk);
 
+            // Chunk_ID -> Chunk Bytes
             let chunks_cf =
                 self.rocksdb.cf_handle(CF_CHUNKS).expect(
                     "CF_CHUNKS column family must exist",
@@ -150,6 +128,13 @@ impl StorageEngine for StorageEngineImpl {
     fn chunk_path(&self, _chunk_id: &ChunkId) -> &Path {
         // implementation of chunk_path method
         todo!()
+    }
+
+    /// Returns the actual size of the data stored after compression
+    fn get_total_allocated_size(&self) -> u64 {
+        // TODO: Use SstFileManager::GetTotalSize().
+        // https://github.com/facebook/rocksdb/wiki/Managing-Disk-Space-Utilization#usage
+        0
     }
 }
 
