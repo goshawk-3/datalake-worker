@@ -13,7 +13,8 @@ use tokio::sync::{
 use tokio::task::JoinHandle;
 
 /// Maximum number of concurrent readers allowed for a chunk
-const MAX_CONCURRENT_READERS: usize = 10;
+const MAX_CONCURRENT_READERS: usize =
+    Semaphore::MAX_PERMITS;
 const MAX_SIZE_ON_DISK: u64 = 1_000_000_000_000; // 1TB
 
 type Cache = Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
