@@ -11,6 +11,7 @@ use rocksdb_lib::{
 use serde_binary::binary_stream::Endian;
 
 const SIZE_KEY: [u8; 1] = [1u8; 1];
+const CF_CHUNKS: &str = "cf_chunks";
 
 /// Represents a storage engine implementation using RocksDB.
 pub struct StorageEngineImpl {
@@ -20,6 +21,8 @@ pub struct StorageEngineImpl {
 
 impl StorageEngine for StorageEngineImpl {
     fn from_conf(conf: StorageConf) -> Self {
+        // TODO: Create all used column families
+
         let rocksdb =
             OptimisticTransactionDB::open_default(
                 conf.path.as_str(),
@@ -43,15 +46,26 @@ impl StorageEngine for StorageEngineImpl {
         &self,
     ) -> Result<Vec<ChunkId>, Error> {
         self.try_commit_txn(|txn| {
-            let iter = txn.iterator(IteratorMode::Start);
+            if let Some(chunks_cf) =
+                self.rocksdb.cf_handle(CF_CHUNKS)
+            {
+                let iter = txn.iterator_cf(
+                    chunks_cf,
+                    IteratorMode::Start,
+                );
 
-            iter.map(Result::unwrap)
-                .map(|(_, value)| {
-                    let chunk_id: ChunkId =
-                        value.deref().try_into().unwrap();
-                    Ok(chunk_id)
-                })
-                .collect()
+                iter.map(Result::unwrap)
+                    .map(|(_, value)| {
+                        let chunk_id: ChunkId = value
+                            .deref()
+                            .try_into()
+                            .unwrap();
+                        Ok(chunk_id)
+                    })
+                    .collect()
+            } else {
+                Ok(vec![])
+            }
         })
     }
 
@@ -122,7 +136,12 @@ impl StorageEngine for StorageEngineImpl {
             // Chunk is now in form of chunk_bytes, drop the chunk struct to free memory
             drop(chunk);
 
-            txn.put(id, chunk_bytes)?;
+            let chunks_cf =
+                self.rocksdb.cf_handle(CF_CHUNKS).expect(
+                    "CF_CHUNKS column family must exist",
+                );
+
+            txn.put_cf(chunks_cf, id, chunk_bytes)?;
 
             Ok(())
         })
