@@ -100,7 +100,7 @@ impl StorageEngine for StorageEngineImpl {
 
             txn.put(
                 SIZE_KEY,
-                size_after_this_update.to_le_bytes(),
+                size_after_this_update.to_be_bytes(),
             )?;
 
             // Persist Key (Database_ID, Block_num) to Chunk_ID
@@ -168,6 +168,6 @@ fn to_key(
     dataset_id: DatasetId,
     block_number: u64,
 ) -> [u8; 40] {
-    let buf = block_number.to_le_bytes();
+    let buf = block_number.to_be_bytes();
     [&dataset_id[..], &buf].concat().try_into().unwrap()
 }
