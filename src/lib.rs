@@ -1,6 +1,7 @@
 pub mod data_manager;
 pub mod rocksdb_storage_engine;
 
+use async_trait::async_trait;
 use serde_binary::Encode;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -37,9 +38,10 @@ impl Encode for DataChunk {
 }
 
 // Data chunk must remain available and untouched till this reference is not dropped
+#[async_trait]
 pub trait DataChunkRef: Send + Sync {
     // Data chunk directory
-    fn path(&self) -> PathBuf;
+    async fn path(&self) -> PathBuf;
 }
 
 #[derive(Debug, Error)]
@@ -60,16 +62,12 @@ impl From<rocksdb_lib::Error> for Error {
 pub struct StorageConf {
     /// Database file path
     path: String,
-
-    /// Database size on-disk limit
-    max_size_allocated_on_disk: u32,
 }
 
 impl Default for StorageConf {
     fn default() -> Self {
         Self {
             path: "/tmp/rocksdb".to_string(),
-            max_size_allocated_on_disk: 1_000_000,
         }
     }
 }
@@ -97,10 +95,11 @@ pub trait StorageEngine: Send + Sync + 'static {
     fn persist_chunk(
         &self,
         chunk: DataChunk,
-        size: u32,
     ) -> Result<(), Error>;
 
     fn chunk_path(&self, _chunk_id: &ChunkId) -> &Path;
+
+    fn get_total_allocated_size(&self) -> u64;
 }
 
 #[cfg(test)]

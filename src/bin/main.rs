@@ -89,7 +89,7 @@ async fn main() {
                 if let Some(chunk_ref) = chunk_ref {
                     println!(
                         "Chunk found: {:?}",
-                        chunk_ref.path()
+                        chunk_ref.path().await
                     );
                 } else {
                     println!("Chunk not found");

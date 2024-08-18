@@ -13,6 +13,7 @@ aws-sdk-s3 = "1.42.0"
 serde-binary =  "0.5.0"
 serde = { version = "1.0", features = ["derive"] }
 rocksdb_lib = { package = "rocksdb", version = "0.22", default-features = false }
+async-trait = "0.1"
 
 [[bin]]
 name = "datalake"

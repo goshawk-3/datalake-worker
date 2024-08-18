@@ -19,13 +19,13 @@ Data lake implementation integrated with AWS S3
 
 # Datasource structure
 
-### Cache - in-memory map of chunks IDs to a lock permit
+### Cache - in-memory map of chunks IDs to a Semaphore
 
-| Chunk_ID    | Permit |
+| Chunk_ID    | Semaphore |
 | -------- | ------- |
-| 0x0A0B    |  0   |
-| 0x0A0C    | 1    |
-| 0x0A0C    | 0    |
+| 0x0A0B    |  Instance   |
+| 0x0A0C    | Instance    |
+| 0x0A0C    | Instance    |
 
 ### OnDisk Tables and Indexes
 
@@ -35,13 +35,10 @@ Data lake implementation integrated with AWS S3
 | 0x0A0C    | 0x...    |
 | 0x0A0C    | 0x    |
 
-| DatasetID_BlockNum   | Chunk_ID |
+| DatasetID_BlockRange   | Chunk_ID |
 | -------- | ------- |
-| 100_0    | 0x0A0B   |
-| 100_1    | 0x0A0B    |
-| 100_2    | 0x0A0B    |
-
-| Metadata    | Value |
- | ---------| -------- |
- 0x1 (Size_Key)    | 2000000 |
+| 100_0_100    | 0x0A0B   |
+| 100_101_120    | 0x0A0C    |
+| 100_121_1000    | 0x0C0A    |
+ 
 

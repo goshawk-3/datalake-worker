@@ -1,6 +1,8 @@
 use crate::{
-    ChunkId, DataChunk, DataChunkRef, StorageEngine,
+    ChunkId, DataChunk, DataChunkRef, DatasetId,
+    StorageEngine,
 };
+use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use serde_binary::binary_stream::Endian;
 use std::collections::{hash_map, HashMap};
@@ -12,9 +14,12 @@ use tokio::sync::{
 use tokio::task::JoinHandle;
 
 /// Maximum number of concurrent readers allowed for a chunk
-const MAX_CONCURRENT_READERS: usize = 10;
+const MAX_CONCURRENT_READERS: usize =
+    Semaphore::MAX_PERMITS;
+const MAX_SIZE_ON_DISK: u64 = 1_000_000_000_000; // 1TB
 
-type Cache = Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
+type CacheWithSem =
+    Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
 
 pub struct DataChunkRefImpl<T: StorageEngine> {
     _permit: OwnedSemaphorePermit,
@@ -36,13 +41,14 @@ impl<T: StorageEngine> DataChunkRefImpl<T> {
     }
 }
 
+#[async_trait]
 impl<T: StorageEngine> DataChunkRef
     for DataChunkRefImpl<T>
 {
-    fn path(&self) -> PathBuf {
+    async fn path(&self) -> PathBuf {
         self.db
-            .try_read()
-            .unwrap()
+            .read()
+            .await
             .chunk_path(&self.chunk_id)
             .to_path_buf()
     }
@@ -52,7 +58,7 @@ pub struct DataManagerImpl<T: StorageEngine> {
     /// Cache holds a list of ids of all persisted chunks
     ///
     /// It also maps a lock permit to chunk_id
-    cache: Cache,
+    cache: CacheWithSem,
 
     /// DB represents the persistence layer
     db: Arc<RwLock<T>>,
@@ -182,7 +188,7 @@ impl<T: StorageEngine> DataManagerImpl<T> {
     /// Implements s3 downloader
     async fn download_chunk(
         db: Arc<RwLock<T>>,
-        cache: Cache,
+        cache: CacheWithSem,
         s3_bucket: String,
         s3_key: String,
     ) {
@@ -203,48 +209,66 @@ impl<T: StorageEngine> DataManagerImpl<T> {
             .into_async_read();
 
         let mut vec = Vec::new();
-        let chunk_size = vec.len() as u32;
 
         tokio::io::copy(&mut stream, &mut vec)
             .await
             .expect("valid data blob");
 
+        let chunk_size = vec.len();
         let chunk: DataChunk =
             serde_binary::from_vec(vec, Endian::Big)
                 .expect("valid chunk");
         let id = chunk.id;
 
-        // Check if the chunk already exists in the cache
-        let exists = {
+        // Check if the chunk already exists, if not we acquire a permit here
+        let chunk_ref = {
             let mut cache = cache.write().await;
             if let hash_map::Entry::Vacant(e) =
                 cache.entry(chunk.id)
             {
-                e.insert(Arc::new(Semaphore::new(
+                // A fast (a bit inaccurate) way to check if the storage limit is reached
+                if db
+                    .read()
+                    .await
+                    .get_total_allocated_size()
+                    + chunk_size as u64
+                    > MAX_SIZE_ON_DISK
+                {
+                    println!("Storage limit reached");
+                    return;
+                }
+                let sem = Arc::new(Semaphore::new(
                     MAX_CONCURRENT_READERS,
-                )));
-                false
+                ));
+
+                e.insert(sem.clone());
+
+                sem.try_acquire_owned().ok().map(|permit| {
+                    DataChunkRefImpl::new(
+                        permit,
+                        id,
+                        db.clone(),
+                    )
+                })
             } else {
-                true
+                None
             }
         };
 
-        if !exists {
+        if let Some(_chunk_ref) = chunk_ref {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
             // Any write conflict will be detected by the RocksDB::commit itself.
             // However, we don't expect any lock-per-key contention here so commit errors due to
             // conflicts are not expected.
-            if let Err(err) = db
-                .read()
-                .await
-                .persist_chunk(chunk, chunk_size)
+            if let Err(err) =
+                db.read().await.persist_chunk(chunk)
             {
                 println!(
                     "Failed to persist chunk: {:?}",
                     err
                 );
                 // chunk could not be persisted.
-                // It could be due to IO error or reaching the max-size limit
+                // It could be due to IO error.
                 // Rollback it from the cache to keep the cache consistent
                 cache.write().await.remove(&id);
             }
