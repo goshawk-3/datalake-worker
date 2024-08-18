@@ -1,6 +1,6 @@
 use crate::{ChunkId, DataChunk};
 use crate::{DatasetId, Error, StorageConf, StorageEngine};
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::path::Path;
 
 use rocksdb_lib::{
@@ -37,7 +37,14 @@ impl StorageEngine for StorageEngineImpl {
         block_number: u64,
     ) -> Result<Option<ChunkId>, Error> {
         self.try_commit_txn(|txn| {
-            let key = to_key(dataset_id, block_number);
+            let key = to_key(
+                dataset_id,
+                Range {
+                    start: block_number,
+                    end: block_number + 1,
+                },
+            );
+
             Ok(txn.get(key)?.map(to_chunk_id))
         })
     }
@@ -81,6 +88,8 @@ impl StorageEngine for StorageEngineImpl {
 
             txn.delete_cf(chunks_cf, chunk_id)?;
 
+            // Chunk_id , dataset_id_chunk_id
+
             // Delete any dataset_id+block_num keys that have values of chunk_id
             let iter = txn.iterator(IteratorMode::Start);
             for (key, value) in iter.map(Result::unwrap) {
@@ -98,12 +107,13 @@ impl StorageEngine for StorageEngineImpl {
         chunk: DataChunk,
     ) -> Result<(), Error> {
         self.try_commit_txn(|txn| {
-            // Persist Key (Database_ID, Block_num) to Chunk_ID
-            for block_num in chunk.block_range.clone() {
-                let key =
-                    to_key(chunk.dataset_id, block_num);
-                txn.put(key, chunk.id)?;
-            }
+            // Persist Key (Database_ID, Block_Range) to Chunk_ID
+
+            let key = to_key(
+                chunk.dataset_id,
+                chunk.block_range.clone(),
+            );
+            txn.put(key, chunk.id)?;
 
             let id = chunk.id;
             let chunk_bytes =
@@ -170,8 +180,13 @@ fn to_chunk_id(v: Vec<u8>) -> ChunkId {
 /// Converts a dataset_id and block_number to a key
 fn to_key(
     dataset_id: DatasetId,
-    block_number: u64,
+    block_number: Range<u64>,
 ) -> [u8; 40] {
-    let buf = block_number.to_be_bytes();
-    [&dataset_id[..], &buf].concat().try_into().unwrap()
+    let buf_start = block_number.start.to_be_bytes();
+    let buf_end = block_number.end.to_be_bytes();
+
+    [&dataset_id[..], &buf_start, &buf_end]
+        .concat()
+        .try_into()
+        .unwrap()
 }
