@@ -1,5 +1,6 @@
 use crate::{
-    ChunkId, DataChunk, DataChunkRef, StorageEngine,
+    ChunkId, DataChunk, DataChunkRef, DatasetId,
+    StorageEngine,
 };
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
@@ -17,7 +18,8 @@ const MAX_CONCURRENT_READERS: usize =
     Semaphore::MAX_PERMITS;
 const MAX_SIZE_ON_DISK: u64 = 1_000_000_000_000; // 1TB
 
-type Cache = Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
+type CacheWithSem =
+    Arc<RwLock<HashMap<ChunkId, Arc<Semaphore>>>>;
 
 pub struct DataChunkRefImpl<T: StorageEngine> {
     _permit: OwnedSemaphorePermit,
@@ -56,7 +58,7 @@ pub struct DataManagerImpl<T: StorageEngine> {
     /// Cache holds a list of ids of all persisted chunks
     ///
     /// It also maps a lock permit to chunk_id
-    cache: Cache,
+    cache: CacheWithSem,
 
     /// DB represents the persistence layer
     db: Arc<RwLock<T>>,
@@ -186,7 +188,7 @@ impl<T: StorageEngine> DataManagerImpl<T> {
     /// Implements s3 downloader
     async fn download_chunk(
         db: Arc<RwLock<T>>,
-        cache: Cache,
+        cache: CacheWithSem,
         s3_bucket: String,
         s3_key: String,
     ) {
@@ -218,8 +220,8 @@ impl<T: StorageEngine> DataManagerImpl<T> {
                 .expect("valid chunk");
         let id = chunk.id;
 
-        // Check if the chunk already exists in the cache
-        let exists = {
+        // Check if the chunk already exists, if not we acquire a permit here
+        let chunk_ref = {
             let mut cache = cache.write().await;
             if let hash_map::Entry::Vacant(e) =
                 cache.entry(chunk.id)
@@ -235,17 +237,25 @@ impl<T: StorageEngine> DataManagerImpl<T> {
                     println!("Storage limit reached");
                     return;
                 }
-
-                e.insert(Arc::new(Semaphore::new(
+                let sem = Arc::new(Semaphore::new(
                     MAX_CONCURRENT_READERS,
-                )));
-                false
+                ));
+
+                e.insert(sem.clone());
+
+                sem.try_acquire_owned().ok().map(|permit| {
+                    DataChunkRefImpl::new(
+                        permit,
+                        id,
+                        db.clone(),
+                    )
+                })
             } else {
-                true
+                None
             }
         };
 
-        if !exists {
+        if let Some(_chunk_ref) = chunk_ref {
             // Due to the usage RocksDB::OptimisticTransaction it is safe here to use read lock
             // Any write conflict will be detected by the RocksDB::commit itself.
             // However, we don't expect any lock-per-key contention here so commit errors due to
